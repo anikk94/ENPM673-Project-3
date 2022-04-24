@@ -1,5 +1,4 @@
 from turtle import left, right
-from xmlrpc.client import MAXINT
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,57 +6,71 @@ import random
 import time
 from copy import deepcopy
 from tqdm import tqdm
-
-from scipy.fftpack import ss_diff
+# from math import pow    
 
 def correlation_correspondence(left_image, right_image):
     '''
     inputs are left and right image after rectfication
     match cost is sum of squared difference
     '''
-    deapth_map = np.zeros_like(right_image)
+    # vertical difference between corresponding epilines
+    v_error = 5
+    depth_map = np.zeros_like(right_image)
     # input image parameters
     row, col = left_image.shape[:2]
     # match window size
     size_w = 7
-    # for v in range(0, row-size_w, size_w):
-    for v in tqdm(range(120, 140)):
-        # for w in range(0, col-size_w, size_w):
-        for w in range(0, col-size_w):
-            # imgr_rectified[110, w] = 0
-            # cv2.imshow("rectified_r", imgr_rectified)
-            # cv2.waitKey(0)
+    size_w_long = size_w*10
+    step_size = 3
+    for v in tqdm(range(250, 330, step_size)):
+        for w in range(0, col-size_w_long, step_size):
             row_number = v
             col_number = w
-            # ssd parameters initialization
             ssd = 0
-            min_ssd = 255*255*255*255
+            min_ssd = 100000000
             match_location = None
-            # defie search template on left image
-            search_window = left_image[v:v+size_w, w:w+size_w]
-            # moving 1 px/step to search one row of right image for the left image template
-            for t in range(0, col-size_w):
-                # calculate ssd for all points in the search window
+            ssd_arr = []
+            ssd_indx = []
+            search_window = left_image[v_error+v : v_error+v+size_w , w : w+size_w]
+            cv2.imshow("sw", search_window)
+            for t in range(0, w+size_w_long-1):
+                ssd = 0
                 for i in range(size_w):
                     for j in range(size_w):
-                        ssd += np.power((int(search_window[i,j]) - int(right_image[row_number+i, t+j])), 2)
-                # print(f"t: {t} -> ssd: {ssd}")
-                if ssd < min_ssd:
-                    min_ssd = ssd
-                    match_location = 0, t
+                        ssd += pow((int(search_window[i,j]) - int(right_image[row_number+i, t+j])),2)
+                ssd_arr.append(ssd)
+                ssd_indx.append((row_number, t))        
                 ssd = 0
-            # match for a given search_window is found at this point
-            # print(f"({v, w}) -> ({match_location}) disparity: {w-match_location[1]}")
-            # deapth_map[v:v+size_w, w:w+size_w] = calculate_deapth(w-match_location[1])
-            deapth_map[v, w] = calculate_deapth(w-match_location[1])
-            # input()
-            # store matching pair
-            # move to new search window
-    # rescale the deapth map to (0,255)
-    # deapth_map /= deapth_map.max()/255
-    deapth_map = np.multiply(deapth_map, 255/deapth_map.max(), out=deapth_map, casting="unsafe")
-    # imshow
-    cv2.imshow("deapth map", deapth_map)
+            match_location = ssd_indx[ssd_arr.index(min(ssd_arr))]
+            match_window = right_image[row_number:row_number+size_w, match_location[1]:match_location[1]+size_w_long]
+            cv2.imshow("mw", match_window)
+            # disparity
+            print(w-match_location[1])
+            cv2.waitKey(0)
+            # print((row_number, col_number), match_location, "\t", col_number-match_location[1])
+            # cv2.imshow("asdf", search_window)
+            # cv2.waitKey(0)
+            # block wise depth colouring
+            disparity = abs(w-match_location[1])
+            if disparity == 0:
+                # depth_map[v-size_w//2:v+size_w//2, w-size_w//2:w+size_w//2] = 0
+                # depth_map[v:v+size_w, w:w+size_w] = 0
+                depth_map[v:v+step_size, w:w+step_size] = 0
+                # depth_map[v, w] = 0
+            else:
+                # depth_map[v-size_w//2:v+size_w//2, w-size_w//2:w+size_w//2] = baseline*f/(abs(disparity))
+                # depth_map[v:v+size_w, w:w+size_w] = baseline*f/(abs(disparity))
+                depth_map[v:v+step_size, w:w+step_size] = baseline*f/((disparity))
+                # depth_map[v, w] = baseline*f/(abs(disparity))
+            # depth_map[v:v+size_w, w:w+size_w] = calculate_depth(w-match_location[1])
+            # depth_map[v:v+size_w, w:w+size_w] = abs(w-match_location[1])
+            # pixel wise depth colouring
+            # depth_map[v, w] = calculate_depth(w-match_location[1])
+        depth_map = np.multiply(depth_map, 255/depth_map.max(), out=depth_map, casting="unsafe")
+        cv2.imshow("depth map", depth_map)
+        cv2.waitKey(1)
+    depth_map = np.multiply(depth_map, 255/depth_map.max(), out=depth_map, casting="unsafe")
+    cv2.imshow("depth map", depth_map)
     cv2.waitKey(0)
 
 
@@ -144,22 +157,6 @@ def feature_correspondence(left_image, right_image, match_point):
                 # SSD
                 # print(i, j, int(template[i, j]), int(image[prcc+i, pccc+j]),'\t', abs(int(template[i, j]) - int(image[prcc+i, pccc+j])))
                 ssd += np.power((int(template[i, j]) - int(image[prcc+i, pccc+j])),2)
-                # image[prcc+i, pccc+j] = 0
-                # template[i, j] = 0
-        # cv2.imshow("right image", image)
-        # cv2.imshow("template", template)
-        # cv2.waitKey(0)
-                # time.sleep(0.5)
-
-        # cross correlation
-        # if cc > high_cc:
-        #     high_cc = cc
-        #     matching_point = img_row, img_col
-        #     print("{} update".format(t))
-        # right_image[img_row, img_col] = 0
-        # print(f"x value: {img_col}\tssd: {ssd}")
-        # cv2.imshow("right image", right_image)
-        # cv2.waitKey(0)
 
         # SSD
         if img_col < position[0]+20 and img_col > position[0]-20:
@@ -174,15 +171,6 @@ def feature_correspondence(left_image, right_image, match_point):
 
     # print(matching_point)
     cv2.circle(image, [matching_point[1], matching_point[0]], 10, (0, 0, 0), 1)
-    # cv2.imshow("right image",image)
-    # cv2.waitKey(0)
-    # imout = imgr_rectified.copy()
-    # if matching_point:
-    #     imout[matching_point[0]-size_w//2:1+matching_point[0]+size_w//2, matching_point[1]-size_w//2: 1+matching_point[1]+size_w//2] = 0
-    #     cv2.imshow("adsf", imout)
-    #     cv2.waitKey(0)
-    # else:
-    #     print("no match")
 
 def drawlines(img1,img2,lines,ptsl,ptsr):
     ''' img1 - image on which we draw the epilines for the points in img2
@@ -217,7 +205,7 @@ def draw_rectangles():
         image = cv2.rectangle(imgl_rectified, startpt, endpt, (0,0,255), 2)
     cv2.imshow("asdf", image)
 
-def calculate_deapth(disparity):
+def calculate_depth(disparity):
     if disparity == 0:
         return 0
     return baseline*f/(abs(disparity))
@@ -231,12 +219,15 @@ def calculate_deapth(disparity):
 #                |_____||_____||____| |____||_____||_____|\____| 
 
 
-input = "octagon"
-imgl = cv2.imread("Questions and Inputs\\" + input + "\\im0.png", 0)
-imgr = cv2.imread("Questions and Inputs\\" + input + "\\im1.png", 0)
+# input = "curule"
+# input = "octagon"
+input = "pendulum"
+imgl = cv2.imread("Questions and Inputs/" + input + "/im0.png", 0)
+imgr = cv2.imread("Questions and Inputs/" + input + "/im1.png", 0)
 h, w = imgl.shape[:2]
-imgl = cv2.resize(imgl, (w//3, h//3))
-imgr = cv2.resize(imgr, (w//3, h//3))
+scale_factor = 3
+imgl = cv2.resize(imgl, (w//scale_factor, h//scale_factor))
+imgr = cv2.resize(imgr, (w//scale_factor, h//scale_factor))
 
 if input == "curule":
     # curule
@@ -310,7 +301,7 @@ ptsr = ptsr[mask.ravel()==1]
 
 # Find epilines corresponding to points in right image (second image) and
 # drawing its lines on left image
-lines2draw = 10
+lines2draw = 100
 lines1 = cv2.computeCorrespondEpilines(ptsl.reshape(-1,1,2), 1, F)
 lines1 = lines1.reshape(-1,3)
 lines1 = lines1[:lines2draw]
@@ -356,17 +347,16 @@ for i in range(len(ptsl)):
     ptsrH2[i] = ptsrH2[i]/ptsrH2[i][-1]
     ptsrH2[i] = ptsrH2[i].astype(int)
 
-# print()
-
+# # print()
+# cv2.imshow("l", imgl)
+# cv2.imshow("r", imgr)
 # cv2.imshow("rectified_r", imgr_rectified)
 # cv2.imshow("rectified_l", imgl_rectified)
-# cv2.imshow("rectified_r", imgr_epilines_rectified)
-# cv2.imshow("rectified_l", imgl_epilines_rectified)
-cv2.waitKey(0)
-# for pt in ptslH1.astype(np.int):
-    # feature_correspondence(imgl_rectified, imgr_rectified, pt.astype(int))
+cv2.imshow("rectified_r", imgr_epilines_rectified)
+cv2.imshow("rectified_l", imgl_epilines_rectified)
+cv2.waitKey(1)
 
 correlation_correspondence(imgl_rectified, imgr_rectified)
 
 cv2.waitKey(0)
-cv2.destroyAllWindows()
+# cv2.destroyAllWindows()
